@@ -1,0 +1,84 @@
+---
+title: "Brand Positioning"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+```
+
+```{r}
+cars <- read.csv("Cars_Data.csv")
+head(cars)
+```
+
+```{r}
+car_factors <- as.matrix(cars[,2:16]) # matrix of dependent variable columns
+cor_matrix <- cor(car_factors)        # correlation matrix of dependent variables w/each other 
+eigen_results <- eigen(cor_matrix)    # eigen decomp
+plot(eigen_results$values, type = "o") # scree plot
+```
+
+```{r}
+w1 <- eigen_results$vectors[,1]        # weights for first PCA vector
+w2 <- eigen_results$vectors[,2]       # weights for second PCA vector
+names(w1) <- names(w2) <- colnames(car_factors)
+w1[order(abs(w1), decreasing = TRUE)]
+print("\n")
+w2[order(abs(w2), decreasing = TRUE)]
+```
+
+```{r}
+z1 <- car_factors %*% eigen_results$vectors[,1] # obtain value of composite variables
+z2 <- car_factors %*% eigen_results$vectors[,2]
+```
+
+Based on weights more than 0.3 in absolute magnitude, the first factor, z1, is composed of these dominant traits: 
+-prestige (negative correlation), 
+-poorly built, attractive (negative correlation), 
+-quiet (negative correlation) successful (negative correlation). 
+
+We took the negative (AKA opposite) of z1’s traits and called them “Luxury”. Thus, moving to the right yields increasing “Luxury”. 
+
+The second factor, z2, is composed of these dominant traits: 
+-sporty, 
+-easy service, 
+-unreliable (negative correlation), 
+-roomy (negative correlation). 
+
+We again took the opposite of z2’s traits and called them “Reliability”. So moving up the vertical axis yields increasing “Reliability”.
+
+```{r}
+pcr <- lm(Overall.Preference ~ z1 + z2, data = cars)
+(b <- coef(pcr)) # b1 = b[2] // b2 = coef(pcr)[3]
+(iso_slope <- - b[2]/b[3]) # made negative to change orientation to Q4 -> Q2 instead of Q3 -> Q1
+```
+
+```{r}
+fits <- pcr$fitted.values
+names(fits) <- cars$Brands
+fits
+```
+
+```{r}
+g <- 
+  cars %>%
+  ggplot(aes(x = -z1,
+             y = z2,
+             label = Brands)) +
+  xlab("Luxury") +
+  ylab("Reliability") +
+  geom_point() +
+  geom_text(aes(label = Brands), vjust = -0.5, hjust = 0.5) +
+  geom_abline(slope = iso_slope, intercept = 16.16171) + 
+  #geom_abline(slope = iso_slope, intercept = ) + 
+  #geom_segment(aes(x = -2, y = 4, xend = 0, yend = 1), color = "red")+
+  theme_bw()
+g
+```
+
+# Recommendations for Infitinty i.e. Infinity is the focal brand
+
+Our car dimensions are “Luxury” and “Reliability”. Infiniti scores just over 2 for “Reliability” and around 4.5 for “Luxury”. It is near the brand BMW. To differentiate and move itself away from BMW, we recommend Infiniti increase its “Reliability” score. Infiniti can do this by increasing its “Easy Service” attribute (coefficient = 0.42) , decreasing its “Unreliable” attribute (coefficient = -0.40), and decreasing its “Roomy” attribute (coefficient = -0.38). In addition, this will put Infiniti on a higher iso-preference line than before. 

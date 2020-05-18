@@ -1,0 +1,181 @@
+---
+title: "Shrinkage Methods"
+author: "Mitesh Ranmal Jain"
+date: "5/18/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(glmnet)
+library(openxlsx)
+
+# ingest cars data
+cars_data <- read.csv("Cars_Data.csv")
+head(cars_data)
+
+```
+
+```{r}
+models <- lapply(seq(0, 1, 0.1), 
+                 function(gamma) {
+                   ### gamma here is the same as alpha for regular glmnet
+                   ### relax means that the gamma value is forced
+                   ### grouped prevents a warning message
+                   cv.glmnet(y = cars_data[,17],
+                             x = as.matrix(cars_data[,2:16]),
+                             gamma = gamma,
+                             relax = TRUE,
+                             grouped = FALSE)
+                 })
+
+
+predictors_data = as.matrix(cars_data[,2:16])
+
+overall_pref = as.matrix(cars_data$Overall.Preference)
+
+normal_glm = lapply(seq(0, 1, 0.1),
+                    function(alp){
+                      glmnet(predictors_data,
+                             overall_pref,
+                             family = 'gaussian',
+                             alpha = alp)
+                    }
+       )
+
+lapply(normal_glm,
+       function(xp){
+         plot(xp, xvar = "lambda", label = T)
+         }
+       )
+
+lasso_model =models[[11]]
+
+plot(lasso_model, xvar = "lambda", label = T)
+sapply(normal_glm, plot)
+```
+
+
+```{r}
+mse_vals <- 
+  sapply(2:10,
+         function(x) {
+           ### for the elastic net models
+           ### find the deviance (cvm) at optimal lambda
+           optimal_lambda_n <- which(models[[x]]$relaxed$statlist[[1]]$lambda == models[[x]]$relaxed$lambda.min)
+           deviance <- models[[x]]$relaxed$statlist[[1]]$cvm[optimal_lambda_n]
+           return(deviance)
+         })
+# plot the results to identify which model is best
+plot(seq(0.1, 0.9, 0.1), mse_vals,
+     xlab = "Alpha Value",
+     ylab = "MSE")
+```
+
+```{r}
+# best result is at alpha = 0.2, which is model 3
+final_models <- list(
+  ridge = models[[1]],
+  best_en = models[[3]],
+  lasso = models[[11]]
+)
+lapply(final_models, plot)
+
+```
+
+```{r}
+enplots <- list(
+  en_01 = models[[2]],
+  en_02 = models[[3]],
+  en_03 = models[[4]],
+  en_04 = models[[5]],
+  en_05 = models[[6]],
+  en_06 = models[[7]],
+  en_07 = models[[8]],
+  en_08 = models[[9]],
+  en_09 = models[[10]]
+)
+lapply(enplots, plot)
+```
+
+```{r}
+# obtain coefficient estimates
+final_coefs <- lapply(final_models, coef)
+lapply(final_coefs,
+       function(coefs){
+         sorted_coefs <- coefs[order(abs(coefs), decreasing = TRUE)]
+         coef_names <- row.names(coefs)[order(abs(coefs), decreasing = TRUE)]
+         barplot(sorted_coefs,
+                 names.arg = coef_names,
+                 xlab = "Coefficients",
+                 ylab = "Value",
+                 las = 2
+         )
+       })
+```
+
+
+```{r}
+enplot_coefs <- lapply(enplots, coef)
+lapply(enplot_coefs,
+       function(coefs){
+         sorted_coefs <- coefs[order(abs(coefs), decreasing = TRUE)]
+         coef_names <- row.names(coefs)[order(abs(coefs), decreasing = TRUE)]
+         barplot(sorted_coefs,
+                 names.arg = coef_names,
+                 xlab = "Coefficients",
+                 ylab = "Value",
+                 las = 2
+         )
+       })
+
+```
+
+```{r}
+all_final_coefs <- cbind(final_coefs[[1]], final_coefs[[2]], final_coefs[[3]])
+colnames(all_final_coefs) <- c("Ridge", "EN Alpha 0.2", "Lasso")
+final_coef = as.data.frame(as.matrix(all_final_coefs), colnames(c("Ridge", "EN Alpha 0.2", "Lasso")))
+
+write.xlsx(x = final_coef, file = "Results.xlsx",
+           sheetName = "ParametereSTIMATES", row.names = TRUE)
+
+final_coef
+```
+
+```{r}
+all_final_coefs
+```
+
+```{r}
+linear_models <- list(
+  not_lasso = lm(Overall.Preference ~ Attractive + Quiet + Interesting + Uncomfortable + Successful, data = cars_data),
+  lasso = lm(Overall.Preference ~ Attractive + Quiet + Interesting + Uncomfortable + Common + Successful, data = cars_data)
+)
+linear_models
+```
+
+```{r}
+all_final_coefs[,1][all_final_coefs[,1] !=0]
+```
+
+```{r}
+### biases
+# ridge
+ridge_bias <- ((all_final_coefs[,1][all_final_coefs[,1] !=0] - coef(linear_models$not_lasso))/ coef(linear_models$not_lasso)) * 100
+# EN
+en_bias <- ((all_final_coefs[,2][all_final_coefs[,2] !=0] - coef(linear_models$not_lasso))/ coef(linear_models$not_lasso)) * 100
+# Lasso
+lasso_bias <- ((all_final_coefs[,3][all_final_coefs[,3] !=0] - coef(linear_models$lasso))/ coef(linear_models$lasso)) * 100
+bias_matrix <- cbind(rbind(cbind(ridge_bias, en_bias), Common = NA), lasso_bias)
+bias_matrix <- as.data.frame(bias_matrix)
+
+write.xlsx(x = bias_matrix, file = "Result.xlsx",
+           sheetName = "Biases", row.names = TRUE)
+
+bias_matrix
+
+```
